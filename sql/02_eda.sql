@@ -10,11 +10,17 @@ GO
 --1.Determinar presencia de valores duplicados:
 SELECT count(*) as 'total_invoices', count(distinct invoice_id) as 'unique_invoices'
 from stg_invoices
+-- Resultado: 
+-- total_invoices=6120
+-- unique_invoices=6000
 --Identificamos 120 invoice_id duplicados.
 
 SELECT COUNT(*)as 'total_payments',COUNT(distinct(payment_id)) as 'unique_payments'
 from stg_payments
---Identificamos 80 invoice_id duplicados.
+-- Resultado: 
+-- total_payments=6120
+-- unique_payments=6000
+--Identificamos 80 payment_id duplicados.
 
 --2.Conocer los valores duplicados:
 SELECT payment_id, COUNT(*)
@@ -33,12 +39,21 @@ SELECT COUNT(*) AS 'total_rows',
        count(payment_amount) as 'non_nulls',
        count(*)-count(payment_amount) as 'nulls'
 FROM stg_payments
---Del total de 4580 filas en la columna payment_amount, 131 tiene valores nulos.
+-- Resultado: 
+-- total_rows=4580
+-- non_nulls=4449
+-- nulls=131
+--Identificamos 131 valores nulos.
+   
 SELECT count(*) as 'total_rows',
       count (invoice_amount) as 'non_nulls',
       count(*)-count(invoice_amount) as 'nulls'
 from stg_invoices
---Del total de 6120 filas en la columna invoice_amount, 300 tiene valores nulos.
+-- Resultado: 
+-- total_rows=6120
+-- non_nulls=5820
+-- nulls=300
+--Identificamos 300 valores nulos.
 
 --4.Conocer si todas las fechas tienen el formato correcto.
 select issue_date
@@ -66,7 +81,7 @@ from stg_invoices
 select max(cast(due_date as date)) AS 'max_date',
        min (cast (due_date as date)) as 'min_date'
 from stg_invoices
---El rango va desde el 2023-01-01(issue_date) hasta el 2025-05-30(due_date)
+--El rango va desde el 2023-01-01(issue_date) hasta el 2025-05-30(due_date).
 --No presentan datos absurdos, ni nulos, ni outliers.
 
 --6.Verificar si existen proveedores en facturas que no esten en su tabla de proveedores.
