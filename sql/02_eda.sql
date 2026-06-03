@@ -102,21 +102,27 @@ from stg_invoices
 where cast(due_date as date)< cast (issue_date as date)
 --Detectamos que hay 2328 pagos realizados antes de la fecha de emision de la factura.
 
---9.Conocer si hay facturas relacionadas a varios pagos.
+--9.Conocer la relación de facturas con pagos.
 with invoice_temporal 
 as (
 select invoice_id,count (*) as 'cantidad_pagos'
 from stg_payments
 group by invoice_id
 )
-select cantidad_pagos, count(invoice_id) as total_facturas
+select cantidad_pagos, count(invoice_id) as 'total_facturas'
 from invoice_temporal
 group by cantidad_pagos
 order by cantidad_pagos
---Se descubrió que son 2063 facturas que fueron pagados en 1 pago, 780 facturas en 2 pagos, 232 en 3 pagos, 
---50 en 4 pagos, 11 en 5 pagos y 1 factura en 6 pagos.
+--Resultado:
+--1 cantidad_pagos = 2063 total_facturas
+--2 cantidad_pagos = 780 total_facturas
+--3 cantidad_pagos = 232 total_facturas
+--4 cantidad_pagos = 50 total_facturas
+--5 cantidad_pagos = 11 total_facturas
+--6 cantidad_pagos = 1 total_facturas
+--Se confirma que cada factura no siempre se cancela en 1 solo pago, existen 1074 facturas que se cancelan en 2, 3 , 4 , 5 y hasta 6 pagos.
 
---10.Conocer si hay pagos relacionados a varias facturas.
+--10.Conocer la relacion de pagos con facturas.
 SELECT payment_id, COUNT(invoice_id) AS cantidad_facturas_por_pago
 FROM stg_payments
 GROUP BY payment_id
