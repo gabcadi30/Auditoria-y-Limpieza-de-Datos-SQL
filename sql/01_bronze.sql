@@ -1,7 +1,8 @@
 /*
 ===============================================================================
-   ARQUITECTURA:
-   - Implementación de capa de Staging (prefijo 'stg_') para un modelo Star Schema.
+   OBJETIVOS:
+   - Ingesta y almacenamiento seguro de datos en bruto (5 archivos en formato CSV).
+   - Implementación de la capa 'Bronze' bajo la estructura de la arquitectura Medallion.
    - Uso del tipo de datos VARCHAR(MAX) para garantizar una carga íntegra y sin errores.
 
    NOTA DE INGESTA:
@@ -10,13 +11,13 @@
 ===============================================================================
 */
 
---1.Creación de tablas staging
+--1.Creación de tablas bronce
 USE proyectotesoreria_db;
 GO
 
---Tabla de Invoices
-DROP TABLE IF EXISTS stg_invoices;
-CREATE TABLE dbo.stg_invoices (
+--Tabla bz_invoices
+DROP TABLE IF EXISTS bz_invoices;
+CREATE TABLE dbo.bz_invoices (
     invoice_id VARCHAR(MAX),
     supplier_id VARCHAR(MAX),
     department_id VARCHAR(MAX),
@@ -28,9 +29,9 @@ CREATE TABLE dbo.stg_invoices (
     [status] VARCHAR(MAX) 
 );
 
---Tabla de Payments
-DROP TABLE IF EXISTS stg_payments;
-CREATE TABLE dbo.stg_payments (
+--Tabla  bz_payments
+DROP TABLE IF EXISTS bz_payments;
+CREATE TABLE dbo.bz_payments (
     payment_id VARCHAR(MAX),
     invoice_id VARCHAR(MAX),
     payment_date VARCHAR(MAX),
@@ -39,24 +40,24 @@ CREATE TABLE dbo.stg_payments (
     processed_by VARCHAR(MAX)
 );
 
---Tabla de Métodos de Pago
-DROP TABLE IF EXISTS stg_payment_methods;
-CREATE TABLE dbo.stg_payment_methods (
+--Tabla bz_payment_methods 
+DROP TABLE IF EXISTS bz_payment_methods;
+CREATE TABLE dbo.bz_payment_methods (
     method_id VARCHAR(MAX),
     method_name VARCHAR(MAX)
 );
 
---Tabla de Departamentos
-DROP TABLE IF EXISTS stg_departments;
-CREATE TABLE dbo.stg_departments (
+--Tabla bz_departments
+DROP TABLE IF EXISTS bz_departments;
+CREATE TABLE dbo.bz_departments (
     department_id VARCHAR(MAX),
     department_name VARCHAR(MAX),
     budget_owner VARCHAR(MAX)
 );
 
---Tabla de Proveedores
-DROP TABLE IF EXISTS stg_suppliers;
-CREATE TABLE dbo.stg_suppliers (
+--Tabla bz_suppliers
+DROP TABLE IF EXISTS bz_suppliers;
+CREATE TABLE dbo.bz_suppliers (
     supplier_id VARCHAR(MAX),
     supplier_name VARCHAR(MAX),
     category VARCHAR(MAX),
