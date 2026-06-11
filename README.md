@@ -24,5 +24,5 @@ Se implementó un flujo de datos estructurado:
 - **SQL:** Para todo el proceso de transformación y modelado (ETL).
 - **Power BI:** Visualización de dashboards para la toma de decisiones.
 
-*Para ver el análisis detallado, las queries clave y los dashboards, revisa el [Informe_Analisis.md](docs/Analisis_de_datos.md).*
+*Para ver el análisis detallado, las queries clave y los dashboards, revisa el [Informe_Analisis.md](doc/Analisis_de_datos.md).*
 
