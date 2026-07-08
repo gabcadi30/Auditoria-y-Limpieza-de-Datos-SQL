@@ -211,108 +211,8 @@ Se hallaron 80 pagos duplicados, cada una con doble registro asociados.
 
 ### 2.4 Búsqueda de valores anómalos
 
-**Cantidad de registros de pagos relacionados a 1 factura**
-```sql
-select top 14 invoice_id, count(*) as 'total_veces'
-from bz_payments
-group by invoice_id
-order by count(*) desc
-```
-| invoice_id | total_veces |
-|------------:|------------:|
-| 1157 | 6 |
-| 1728 | 5 |
-| 2138 | 5 |
-| 2558 | 5 |
-| 320  | 5 |
-| 3801 | 5 |
-| 3881 | 5 |
-| 4240 | 5 |
-| 4904 | 5 |
-| 5326 | 5 |
-| 898  | 5 |
-| 949  | 5 |
-| 103  | 4 |
-| 1079 | 4 |
 
-Se detectó facturas con múltiples registros repetidos. La factura con 1157 de ID se relacionó hasta con 6 registros de pago.
-
-**Cantidad de pagos realizados en un día**
-```sql
-select top 14 payment_date, count(*) as 'total_pagos_realizados'
-from bz_payments
-group by payment_date
-order by total_pagos_realizados desc
-```
-| payment_date | total_pagos_realizados |
-|---------------|----------------------:|
-| 2023-03-23 | 15 |
-| 2024-01-20 | 15 |
-| 2024-07-18 | 13 |
-| 2024-11-08 | 13 |
-| 2024-12-21 | 13 |
-| 2023-10-17 | 12 |
-| 2024-08-02 | 12 |
-| 2024-10-09 | 12 |
-| 2025-03-17 | 12 |
-| 2023-01-16 | 11 |
-| 2023-02-18 | 11 |
-| 2023-04-22 | 11 |
-| 2023-04-24 | 11 |
-| 2023-12-07 | 11 |
-
-Se encontró que el 23 de marzo del 2023 y el 20 de enero del 2024 fueron los días con mayor pago, 15 pagos realizados.
-
-**Monto total facturado por proveedor**
-```sql
-select top 15 supplier_id, 
-sum(cast(invoice_amount as numeric(10,2))) as 'monto_total_facturado'
-from bz_invoices
-group by supplier_id
-order by sum(cast(invoice_amount as numeric(10,2))) desc
-```
-| supplier_id | monto_total_facturado |
-|------------:|----------------------:|
-| 49  | 649144.65 |
-| 103 | 648805.24 |
-| 75  | 632216.88 |
-| 98  | 628997.01 |
-| 105 | 628555.18 |
-| 93  | 619405.28 |
-| 50  | 614183.70 |
-| 53  | 609020.66 |
-| 83  | 606928.74 |
-| 17  | 604974.11 |
-| 32  | 597960.42 |
-| 97  | 588065.95 |
-| 2   | 587219.83 |
-| 18  | 586967.87 |
-
-Se convirtió temporalemente los datos de invoice_amount en números mediante la función CAST, para determinar que el proveedor con ID 49 posee el mayor monto total facturado.
-
-**Cantidad de facturas por departamento**
-```sql
-select department_id, count(*) as 'cantidad_facturas'
-from bz_invoices
-group by department_id
-order by cantidad_facturas desc
-```
-| department_id | cantidad_facturas |
-|--------------:|------------------:|
-| 5  | 644 |
-| 7  | 633 |
-| 6  | 623 |
-| 9  | 616 |
-| 2  | 614 |
-| 4  | 610 |
-| 1  | 604 |
-| 3  | 601 |
-| 10 | 594 |
-| 8  | 581 |
-
-Determinando que el departamento con ID 5 posee la mayor cantidad de facturas emitidas con 644 registros.
-
-**Determinar si el número de factura es valor único**
+---
 ```sql
 select invoice_number, count(*) as 'veces_repetido'
 from bz_invoices
@@ -335,4 +235,112 @@ having count(*) > 1
 | F113-5937 | 2 |
 | ... | ... |
 
-Se detectaron 132 valores con registro doble, sin embargo, ya se habían detectado solo 120 valores duplicados. Existen 12 registros pendientes de revisión. 
+-Se detectaron 132 invoice_number con doble registro, descartando a invoice_number como una 'primary key' de valor único. 
+
+-Ya se encontraba mapeado 120 duplicados exactos en bz_invoices, quedando estos 12 valores con invoice_number duplicado pendiente de revisión.
+
+```sql
+SELECT *
+FROM bz_invoices
+WHERE invoice_number IN (
+    SELECT invoice_number
+    FROM bz_invoices
+    GROUP BY invoice_number
+    HAVING COUNT(DISTINCT invoice_id) > 1 )
+ORDER BY invoice_number desc
+```
+| invoice_id | supplier_id | department_id | invoice_number | issue_date | due_date | invoice_amount | currency | status |
+|------------:|-------------:|--------------:|----------------|-------------|-----------|---------------:|----------|----------|
+| 367  | 8  | 3 | F8-9871  | 2025-02-09 | 2025-02-24 | 1805.58  | USD | Vencido |
+| 2657 | 8  | 9 | F8-9871  | 2023-12-08 | 2024-01-22 | 14731.29 | PEN | Pagado |
+| 586  | 84 | 1 | F84-6901 | 2023-03-10 | 2023-05-09 | 13241.42 | PEN | Pendiente |
+| 5662 | 84 | 8 | F84-6901 | 2023-06-07 | 2023-07-07 | 5203.75  | PEN | Pendiente |
+...
+| 1911 | 33 | 9 | F33-3907 | 2023-05-08 | 2023-05-23 | 5306.00  | USD | Pagado |
+| 1471 | 33 | 3 | F33-3907 | 2024-12-07 | 2025-01-06 | 4643.96  | PEN | Vencido |
+| 239  | 1  | 9 | F1-5501  | 2024-07-18 | 2024-09-16 | 335.83   | USD | Pendiente |
+| 513  | 1  | 9 | F1-5501  | 2023-02-13 | 2023-04-14 | 7486.81  | USD | Pendiente |
+| 1237 | 15 | 1 | F15-3741 | 2023-01-18 | 2023-03-04 | 16723.64 | PEN | Pendiente |
+| 4314 | 15 | 8 | F15-3741 | 2024-01-05 | 2024-03-05 |**NULL**   | PEN | Pendiente |
+| 3947 | 12 | 3 | F12-6573 | 2023-11-27 | 2023-12-27 | 5542.98  | PEN | Pagado |
+| 1561 | 12 | 2 | F12-6573 | 2024-12-29 | 2025-02-27 | 17058.96 | USD | Pagado |
+
+-Se detectaron 24 registros con valores duplicados en invoice_number y supplier_id, pero con diferentes: invoice_id, department_id,issue_date, due_date e invoice_amount. 
+
+-Impidiendo ser eliminados por no ser filas duplicadas exactas.
+
+---
+### 2.5. Revisión de formato en Fechas:
+Usamos la funcion ISDATE para consultar la calidad de los valores en formato fecha. Nos devuelve valores booleanos siendo 1 para de fechas válidas y 0 si hay fechas inválidas. 
+```sql
+SELECT issue_date
+FROM bz_invoices
+WHERE ISDATE(issue_date) = 0
+```
+
+```sql
+SELECT due_date
+FROM bz_invoices
+WHERE ISDATE(due_date) = 0
+```
+
+```sql
+SELECT payment_date
+FROM bz_payments
+WHERE ISDATE(payment_date) = 0
+```
+No devuelve resultados en ninguna de las 3 consultas, concluyendo la  presencia de valores válidos en el formato fecha.
+
+---
+## Fase Silver: Estandarización y limpieza
+Con los resultados encontrados en el Análisis Exploratorio, se procede a crear las tablas silver con datos limpios, excluyendo y eliminando los errores, duplicados y data inconsistente.
+### 3.1. Creación de Tablas finales:
+Se crean las 5 tablas con los tipos de datos correctos: 
+```sql
+DROP TABLE IF EXISTS sil_departments
+CREATE TABLE sil_departments (
+    department_id int,
+    department_name varchar(20),
+    budget_owner varchar(20) )
+```
+```sql
+DROP TABLE IF EXISTS sil_payment_methods
+CREATE TABLE sil_payment_methods (
+     method_id int,
+     method_name varchar(20) )
+```
+```sql
+DROP TABLE IF EXISTS sil_suppliers
+CREATE TABLE sil_suppliers (
+    supplier_id int,
+    supplier_name varchar(20),
+    category varchar(20),
+    country varchar(20),
+    rating varchar(5) )
+```
+```sql
+DROP TABLE IF EXISTS sil_invoices;
+CREATE TABLE sil_invoices (
+invoice_id int,
+supplier_id int,
+department_id int,
+invoice_number varchar(12),
+issue_date date,
+due_date date,
+invoice_amount decimal(10,2),
+invoice_amount_status varchar (20),
+invoice_number_status varchar(20),
+currency varchar(3),
+status varchar(12) )
+```
+```sql
+DROP TABLE IF EXISTS sil_payments;
+CREATE TABLE sil_payments (
+  payment_id INT,
+  invoice_id INT ,
+  payment_date DATE,
+  payment_amount NUMERIC(10,2),
+  payment_amount_status VARCHAR(20),
+  method_id INT,
+  processed_by VARCHAR(20) );
+```
