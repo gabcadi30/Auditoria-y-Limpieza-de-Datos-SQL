@@ -344,3 +344,165 @@ CREATE TABLE sil_payments (
   method_id INT,
   processed_by VARCHAR(20) );
 ```
+### 3.2. Transformación y carga de datos:
+Se cargan datos sin filas duplicadas, añadimos el campo de "invoice_amount_status" y "payment_amount_status" para señalar los casos donde hayan valores nulos en el monto. Ademas añadimos tambien "invoice_number_status" para señalar los 12 casos de duplicidad encontrados en el análisis EDA.
+
+```sql
+INSERT INTO sil_departments (
+department_id,
+department_name,
+budget_owner )
+
+SELECT 
+ cast(department_id as int),
+ department_name,
+ budget_owner
+FROM bz_departments
+```
+```sql
+INSERT INTO sil_payment_methods
+( method_id,
+ method_name)
+
+SELECT 
+ cast(method_id as int),
+ method_name
+FROM bz_payment_methods
+```
+```sql
+INSERT INTO sil_suppliers
+( supplier_id,
+ supplier_name,
+ category,
+ country,
+ rating)
+
+SELECT 
+ cast(supplier_id as int),
+ supplier_name,
+ category,
+ country,
+ rating
+FROM bz_suppliers
+```
+```sql
+with payment_cte AS 
+( SELECT *, row_number() over (partition by 
+                              payment_id,
+                              invoice_id,
+                              payment_date,
+                              payment_amount,
+                              method_id,
+                              processed_by 
+                             order by payment_id )
+                             AS rn 
+   FROM bz_payments)
+
+INSERT INTO sil_payments (
+      payment_id,
+      invoice_id,
+      payment_date,
+      payment_amount,
+      payment_amount_status,
+      method_id,
+      processed_by )
+
+SELECT
+cast(payment_id as int),
+cast(invoice_id as int),
+cast (payment_date as date),
+cast( payment_amount as numeric),
+
+CASE 
+  WHEN payment_amount is null then 'faltante'
+  ELSE 'ok'
+  END as payment_amount_status,
+
+cast(method_id as int),
+processed_by
+
+from payment_cte
+where rn=1
+
+```
+```sql
+WITH invoice_cte AS
+( SELECT *,row_number() over ( 
+                   PARTITION BY
+                    invoice_id,
+                    supplier_id,
+                    department_id,
+                    invoice_number,
+                    issue_date,
+                    due_date,
+                    invoice_amount,
+                    currency,
+                    status
+                  ORDER BY invoice_id
+           ) AS rn
+    FROM bz_invoices )
+
+INSERT INTO sil_invoices (
+    invoice_id,
+    supplier_id,
+    department_id,
+    invoice_number,
+    issue_date,
+    due_date,
+    invoice_amount,
+    invoice_amount_status,
+    invoice_number_status,
+    currency,
+    status )
+
+SELECT
+    CAST(invoice_id AS INT),
+    CAST(supplier_id AS INT),
+    CAST(department_id AS INT),
+    invoice_number,
+    CAST(issue_date AS DATE),
+    CAST(due_date AS DATE),
+    CAST(invoice_amount AS DECIMAL(10,2)),
+
+    CASE
+        WHEN invoice_amount IS NULL THEN 'faltante'
+        ELSE 'ok'
+    END AS invoice_amount_status,
+
+    CASE
+        WHEN invoice_number IN
+          ( SELECT invoice_number
+            FROM invoice_cte
+            WHERE rn = 1
+            GROUP BY invoice_number
+            HAVING COUNT(*) > 1 )
+        THEN 'duplicado'
+        ELSE 'ok'
+    END AS invoice_number_status,
+
+    currency,
+    status
+
+FROM invoice_cte
+WHERE rn = 1;
+```
+### 3.3.Validación de Post-Carga:
+```sql
+select count(*) as total_limpio 
+from sil_payments
+```
+| total_limpio  | 
+|--------------|
+| 4500      |
+
+```sql
+select count(*) as total_limpio 
+from sil_invoices
+```
+| total_limpio  | 
+|--------------|
+| 6000      |
+
+## Fase Gold: Análisis según las necesidades
+
+
