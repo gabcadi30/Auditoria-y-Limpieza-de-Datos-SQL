@@ -1,6 +1,6 @@
 
 
-# Análisis y control de gastos por Departamentos
+# Análisis de Retrasos en Pago a Proveedores
 ![SQL Server](https://img.shields.io/badge/SQL%20Server-Modelado-CC292B?style=for-the-badge&logo=microsoft-sql-server&logoColor=white) ![Power BI](https://img.shields.io/badge/Power%20BI-Dashboard-F2C811?style=for-the-badge&logo=power-bi&logoColor=black)
 
 Proyecto diseñado de extremo a extremo (end to end) analiza el flujo de pagos y facturación de una mediana empresa para detectar irregularidades y pérdidas financieras. A través de un modelado de datos bajo la **Arquitectura Medallion**, se transformaron datos crudos en información estratégica para el control de sobrepagos por departamento, optimizar la gestión de plazos de vencimiento y el seguimiento de facturas pendientes.

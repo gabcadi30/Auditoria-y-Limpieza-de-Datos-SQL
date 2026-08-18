@@ -503,6 +503,454 @@ from sil_invoices
 |--------------|
 | 6000      |
 
-## Fase Gold: Análisis según las necesidades
+## Fase Gold: Análisis de Negocio 
+Ejecutamos consultas que responda las principales pregunta del caso a resolver.
+### 4.1. ¿Qué porcentaje de facturas se pagan fuera del plazo?
+Unimos la tabla de invoices con payment para encontrar las facturas pagadas mediante un JOIN.
+```sql
+select TOP 10 i.invoice_id,i.due_date, i.issue_date,p.payment_date
+from sil_invoices i left join sil_payments p 
+on i.invoice_id=p.invoice_id
+```
+| invoice_id | due_date | issue_date | payment_date |
+|-----------:|-----------|------------|--------------|
+| 5568 | 2023-06-03 | 2023-04-04 | 2024-07-10 |
+| 4070 | 2024-05-16 | 2024-03-17 | NULL |
+| 3177 | 2025-03-01 | 2025-01-30 | NULL |
+| 5177 | 2024-05-20 | 2024-03-21 | 2024-07-03 |
+| 5177 | 2024-05-20 | 2024-03-21 | 2023-06-30 |
+| 283  | 2024-10-01 | 2024-08-02 | NULL |
+| 5725 | 2024-09-04 | 2024-07-06 | 2024-05-04 |
+| 5725 | 2024-09-04 | 2024-07-06 | 2025-02-12 |
+| 5725 | 2024-09-04 | 2024-07-06 | 2024-07-28 |
+| 138  | 2024-07-28 | 2024-05-29 | 2024-06-25 |
 
+Luego creamos una columna condicional mediante CASE WHEN para etiquetar las facturas como: anticipado, a tiempo, pendiente, con retraso. Tambien añadimos la etiqueta "otros" para etiquetar los valores por defecto.
+```sql
+with facturas_total as (
+select p.payment_date,i.invoice_id,i.due_date, i.issue_date
+from sil_invoices i left join sil_payments p 
+on i.invoice_id=p.invoice_id ),
+
+estatus_por_factura as (
+ select invoice_id,payment_date,issue_date, due_date,
+  case
+    when issue_date>payment_date then 'anticipado'
+    when issue_date<=payment_date and payment_date<=due_date then 'a tiempo'
+    when payment_date> due_date then 'con retraso'
+    when payment_date is null then 'pendiente'
+    else 'otro'
+  end as estatus_pago
+ from facturas_total )
+
+ select top 15 * from estatus_por_factura
+```
+| invoice_id | payment_date | issue_date | due_date | estatus_pago |
+|-----------:|--------------|------------|-----------|--------------|
+| 5568 | 2024-07-10 | 2023-04-04 | 2023-06-03 | con retraso |
+| 4070 | NULL | 2024-03-17 | 2024-05-16 | pendiente |
+| 3177 | NULL | 2025-01-30 | 2025-03-01 | pendiente |
+| 5177 | 2024-07-03 | 2024-03-21 | 2024-05-20 | con retraso |
+| 5177 | 2023-06-30 | 2024-03-21 | 2024-05-20 | anticipado |
+| 283 | NULL | 2024-08-02 | 2024-10-01 | pendiente |
+| 5725 | 2024-05-04 | 2024-07-06 | 2024-09-04 | anticipado |
+| 5725 | 2025-02-12 | 2024-07-06 | 2024-09-04 | con retraso |
+| 5725 | 2024-07-28 | 2024-07-06 | 2024-09-04 | a tiempo |
+| 138 | 2024-06-25 | 2024-05-29 | 2024-07-28 | a tiempo |
+| 1154 | 2024-10-01 | 2023-09-02 | 2023-10-02 | con retraso |
+| 1154 | 2024-04-11 | 2023-09-02 | 2023-10-02 | con retraso |
+| 5122 | 2024-08-11 | 2023-12-12 | 2024-01-26 | con retraso |
+| 5105 | 2023-08-09 | 2023-09-13 | 2023-10-13 | anticipado |
+| 5105 | 2024-12-09 | 2023-09-13 | 2023-10-13 | con retraso |
+
+Sin embargo detectamos que hay invoices_id de facturas que se repiten y esto es porque existe facturas que se cancelan en partes, haciendo que una misma factura se duplique en base a los pagos asociados a ella, dando una informacion erronea al análisis.
+```sql
+select top 15   invoice_id, count(*) as 'numero_de_pagos'
+from sil_payments
+group by invoice_id
+having count(*)>1
+order by numero_de_pagos desc
+```
+| invoice_id | numero_de_pagos |
+|-----------:|-----------------:|
+| 1157 | 6 |
+| 4904 | 5 |
+| 949  | 5 |
+| 898  | 5 |
+| 1728 | 5 |
+| 5326 | 5 |
+| 2558 | 5 |
+| 320  | 5 |
+| 3881 | 5 |
+| 2138 | 5 |
+| 3801 | 5 |
+| 3458 | 4 |
+| 4168 | 4 |
+| 4002 | 4 |
+| 5745 | 4 |
+
+Para solucionar ello creamos una CTE temporal llamada "ultimo_pago" que agrupará por invoice_id y solo considerará la última fecha de pago de cada factura, entonces si una factura tiene 6 pagos asociados, solo contará el último que se hizo para cancelar el total de la factura. Esta CTE será el reemplazo de la tabla sil_payments en el JOIN para el cruce de la tabla factura y pagos.
+
+```sql
+with ultimo_pago AS (
+SELECT
+    invoice_id,
+    MAX(payment_date) AS fecha_ultimo_pago
+FROM sil_payments
+GROUP BY invoice_id ),
+
+facturas_total as (
+select p.fecha_ultimo_pago,i.invoice_id,i.due_date, i.issue_date, i.status
+from sil_invoices i left join ultimo_pago p 
+on i.invoice_id=p.invoice_id ),
+
+estatus_por_factura as (
+ select invoice_id,status, fecha_ultimo_pago,issue_date, due_date,
+  case
+    when issue_date>fecha_ultimo_pago then 'anticipada'
+    when issue_date<=fecha_ultimo_pago and fecha_ultimo_pago<=due_date then 'a tiempo'
+    when fecha_ultimo_pago> due_date then 'con retraso'
+    when fecha_ultimo_pago is null then 'pendiente'
+    else 'otro'
+  end as estado_factura
+ from facturas_total )
+
+ select top 15 * from estatus_por_factura
+```
+
+| invoice_id | status | fecha_ultimo_pago | issue_date | due_date | estado_factura |
+|-----------:|---------|-------------------|------------|-----------|----------------|
+| 5568 | Pendiente | 2024-07-10 | 2023-04-04 | 2023-06-03 | con retraso |
+| 4070 | Pagado | NULL | 2024-03-17 | 2024-05-16 | pendiente |
+| 3177 | Vencido | NULL | 2025-01-30 | 2025-03-01 | pendiente |
+| 5177 | Vencido | 2024-07-03 | 2024-03-21 | 2024-05-20 | con retraso |
+| 283 | Vencido | NULL | 2024-08-02 | 2024-10-01 | pendiente |
+| 5725 | Pendiente | 2025-02-12 | 2024-07-06 | 2024-09-04 | con retraso |
+| 138 | Pendiente | 2024-06-25 | 2024-05-29 | 2024-07-28 | a tiempo |
+| 1154 | Pendiente | 2024-10-01 | 2023-09-02 | 2023-10-02 | con retraso |
+| 5122 | Pagado | 2024-08-11 | 2023-12-12 | 2024-01-26 | con retraso |
+| 5105 | Pagado | 2024-12-09 | 2023-09-13 | 2023-10-13 | con retraso |
+| 5421 | Vencido | NULL | 2023-04-16 | 2023-05-01 | pendiente |
+| 4301 | Vencido | 2024-04-28 | 2024-05-17 | 2024-07-16 | anticipada |
+| 756 | Vencido | NULL | 2024-02-26 | 2024-04-11 | pendiente |
+| 4778 | Vencido | NULL | 2024-11-13 | 2024-12-13 | pendiente |
+| 5972 | Pendiente | 2023-04-01 | 2024-03-08 | 2024-03-23 | anticipada |
+
+Con la informacion correcta lista, buscamos informacion solicitada. Para ello contamos y agrupamos las facturas según la CTE temporal "estado_factura", para calcular el total de facturas y que ejecute la division en cada linea agregamos una windows functions de suma.
+```sql
+with ultimo_pago AS (
+SELECT
+    invoice_id,
+    MAX(payment_date) AS fecha_ultimo_pago
+FROM sil_payments
+GROUP BY invoice_id ),
+
+facturas_total as (
+select p.fecha_ultimo_pago,i.invoice_id,i.due_date, i.issue_date, i.status
+from sil_invoices i left join ultimo_pago p 
+on i.invoice_id=p.invoice_id ),
+
+estatus_por_factura as (
+ select invoice_id,status, fecha_ultimo_pago,issue_date, due_date,
+  case
+    when issue_date>fecha_ultimo_pago then 'anticipada'
+    when issue_date<=fecha_ultimo_pago and fecha_ultimo_pago<=due_date then 'a tiempo'
+    when fecha_ultimo_pago> due_date then 'con retraso'
+    when fecha_ultimo_pago is null then 'pendiente'
+    else 'otro'
+  end as estado_factura
+ from facturas_total )
+
+ SELECT 
+    estado_factura,
+    COUNT(*) as total_facturas,
+     cast(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER()  as decimal(5,2)) AS porcentaje
+ FROM estatus_por_factura
+GROUP BY estado_factura
+```
+* Para que el resultado esté en decimales de 2 digitos, usamos un CAST a DECIMAL(5,2).
+
+| estado_factura | total_facturas | porcentaje (%) |
+|----------------|---------------:|---------------:|
+| a tiempo | 145 | 2.42 |
+| pendiente | 2863 | 47.72 |
+| con retraso | 1607 | 26.78 |
+| anticipada | 1385 | 23.08 |
+
+### 4.2. ¿Cuál es el retraso promedio en días de los pagos?
+
+* Si bien la pregunta solo considera a las facturas con retraso, sin embargo sabemos que tambien tenemos facturas pagadas anticipadamente y sobretodo facturas que todavía no han sido cancelas. Por ello, enfocaremos el promedio de días en base al estado de cada factura.
+
+Iniciamos usando la CTE "estatus_por_factura" que creamos en la pregunta 1 , y le agregamos una nueva clausula condicional mediante CASE WHEN para calcular los dias de retraso en base al estado de cada factura.
+```sql
+with ultimo_pago AS (
+SELECT
+    invoice_id,
+    MAX(payment_date) AS fecha_ultimo_pago
+FROM sil_payments
+GROUP BY invoice_id ),
+
+facturas_total as (
+select p.fecha_ultimo_pago,i.invoice_id,i.due_date, i.issue_date, i.status
+from sil_invoices i left join ultimo_pago p 
+on i.invoice_id=p.invoice_id ),
+
+estatus_por_factura as (
+ select invoice_id,status, fecha_ultimo_pago,issue_date, due_date,
+  case
+    when issue_date>fecha_ultimo_pago then 'anticipada'
+    when issue_date<=fecha_ultimo_pago and fecha_ultimo_pago<=due_date then 'a tiempo'
+    when fecha_ultimo_pago> due_date then 'con retraso'
+    when fecha_ultimo_pago is null then 'pendiente'
+    else 'otro'
+  end as estado_factura
+ from facturas_total ),
+
+ facturas_fuera_fecha as (
+ SELECT *,
+ case
+  when estado_factura ='anticipada' then DATEDIFF(day,fecha_ultimo_pago,issue_date)
+  when estado_factura ='a tiempo' then 0
+  when estado_factura ='con retraso' then DATEDIFF(day, due_date,fecha_ultimo_pago)
+  when estado_factura = 'pendiente' then DATEDIFF(day,due_date,'2025-05-31' )
+  else NULL 
+  end as dias_fuera_de_fecha
+ from estatus_por_factura)
+
+ select top 15 * from facturas_fuera_fecha
+ ```
+ * Para las facturas sin pago registrado (payment_date IS NULL), los días de atraso se calcularon tomando como referencia la fecha de corte 2025-05-31, correspondiente al último período del conjunto de datos.
+
+| invoice_id | status | fecha_ultimo_pago | issue_date | due_date | estado_factura | dias_fuera_de_fecha |
+|-----------:|---------|-------------------|------------|-----------|----------------|--------------------:|
+| 5568 | Pendiente | 2024-07-10 | 2023-04-04 | 2023-06-03 | con retraso | 403 |
+| 4070 | Pagado | NULL | 2024-03-17 | 2024-05-16 | pendiente | 380 |
+| 3177 | Vencido | NULL | 2025-01-30 | 2025-03-01 | pendiente | 91 |
+| 5177 | Vencido | 2024-07-03 | 2024-03-21 | 2024-05-20 | con retraso | 44 |
+| 283 | Vencido | NULL | 2024-08-02 | 2024-10-01 | pendiente | 242 |
+| 5725 | Pendiente | 2025-02-12 | 2024-07-06 | 2024-09-04 | con retraso | 161 |
+| 138 | Pendiente | 2024-06-25 | 2024-05-29 | 2024-07-28 | a tiempo | 0 |
+| 1154 | Pendiente | 2024-10-01 | 2023-09-02 | 2023-10-02 | con retraso | 365 |
+| 5122 | Pagado | 2024-08-11 | 2023-12-12 | 2024-01-26 | con retraso | 198 |
+| 5105 | Pagado | 2024-12-09 | 2023-09-13 | 2023-10-13 | con retraso | 423 |
+| 5421 | Vencido | NULL | 2023-04-16 | 2023-05-01 | pendiente | 761 |
+| 4301 | Vencido | 2024-04-28 | 2024-05-17 | 2024-07-16 | anticipada | 19 |
+| 756 | Vencido | NULL | 2024-02-26 | 2024-04-11 | pendiente | 415 |
+| 4778 | Vencido | NULL | 2024-11-13 | 2024-12-13 | pendiente | 169 |
+| 5972 | Pendiente | 2023-04-01 | 2024-03-08 | 2024-03-23 | anticipada | 342 |
+
+Finalmente, calculamos el promedio de los dias (AVG) y agrupamos por el estado de la factura (group by).
+
+```sql
+with ultimo_pago AS (
+SELECT
+    invoice_id,
+    MAX(payment_date) AS fecha_ultimo_pago
+FROM sil_payments
+GROUP BY invoice_id ),
+
+facturas_total as (
+select p.fecha_ultimo_pago,i.invoice_id,i.due_date, i.issue_date, i.status
+from sil_invoices i left join ultimo_pago p 
+on i.invoice_id=p.invoice_id ),
+
+estatus_por_factura as (
+ select invoice_id,status, fecha_ultimo_pago,issue_date, due_date,
+  case
+    when issue_date>fecha_ultimo_pago then 'anticipada'
+    when issue_date<=fecha_ultimo_pago and fecha_ultimo_pago<=due_date then 'a tiempo'
+    when fecha_ultimo_pago> due_date then 'con retraso'
+    when fecha_ultimo_pago is null then 'pendiente'
+    else 'otro'
+  end as estado_factura
+ from facturas_total ),
+
+ facturas_fuera_fecha as (
+ SELECT *,
+ case
+  when estado_factura ='anticipada' then DATEDIFF(day,fecha_ultimo_pago,issue_date)
+  when estado_factura ='a tiempo' then 0
+  when estado_factura ='con retraso' then DATEDIFF(day, due_date,fecha_ultimo_pago)
+  when estado_factura = 'pendiente' then DATEDIFF(day,due_date,'2025-05-31' )
+  else NULL
+  end as dias_fuera_de_fecha
+ from estatus_por_factura
+)
+
+select count(invoice_id)as cantidad_facturas, estado_factura, avg(dias_fuera_de_fecha)as promedio_dias
+from facturas_fuera_fecha
+group by estado_factura
+```
+
+| cantidad_facturas | estado_factura | promedio_dias |
+|------------------:|----------------|--------------:|
+| 145  | a tiempo      | 0   |
+| 2863 | pendiente     | 441 |
+| 1607 | con retraso   | 293 |
+| 1385 | anticipada    | 265 |
+
+### 4.3. ¿Qué proveedores concentran el mayor número de facturas vencidas?
+* Se entiende como facturas vencidas a las que tienen pendiente el pago, es decir, facturas "pendiente" según nuestra columna de estado_factura.
+
+Para conocer a los proveedores con más facturas pendientes, hacemos un JOIN a la tabla sil_invoices con sil_supplier, trayendo las columnas de supplier_name,category y country.Todo se guarda en otra CTE temporal de nombre "suppliers_invoices".
+```sql
+with suppliers_invoices as (
+select top 15 i.invoice_id,i.status,i.due_date,i.issue_date,i.invoice_amount,i.currency,s.supplier_name,s.category,s.country
+from sil_invoices i left join sil_suppliers s 
+on i.supplier_id=s.supplier_id  
+)
+select * from suppliers_invoices
+```
+| invoice_id | status | due_date | issue_date | invoice_amount | currency | supplier_name | category | country |
+|-----------:|--------|-----------|------------|---------------:|----------|---------------|----------|---------|
+| 5568 | Pendiente | 2023-06-03 | 2023-04-04 | 2601.53 | USD | Proveedor_100 | Logística | México |
+| 4070 | Pagado | 2024-05-16 | 2024-03-17 | 5343.80 | USD | Proveedor_100 | Logística | México |
+| 3177 | Vencido | 2025-03-01 | 2025-01-30 | 11253.18 | PEN | Proveedor_100 | Logística | México |
+| 5177 | Vencido | 2024-05-20 | 2024-03-21 | 8631.95 | USD | Proveedor_100 | Logística | México |
+| 283 | Vencido | 2024-10-01 | 2024-08-02 | 11039.55 | USD | Proveedor_100 | Logística | México |
+| 5725 | Pendiente | 2024-09-04 | 2024-07-06 | 2385.68 | PEN | Proveedor_100 | Logística | México |
+| 138 | Pendiente | 2024-07-28 | 2024-05-29 | 19328.74 | USD | Proveedor_100 | Logística | México |
+| 1154 | Pendiente | 2023-10-02 | 2023-09-02 | 19940.49 | USD | Proveedor_100 | Logística | México |
+| 5122 | Pagado | 2024-01-26 | 2023-12-12 | 17608.22 | USD | Proveedor_100 | Logística | México |
+| 5105 | Pagado | 2023-10-13 | 2023-09-13 | 9182.18 | USD | Proveedor_100 | Logística | México |
+| 5421 | Vencido | 2023-05-01 | 2023-04-16 | 7339.20 | USD | Proveedor_100 | Logística | México |
+| 4301 | Vencido | 2024-07-16 | 2024-05-17 | 15912.33 | USD | Proveedor_100 | Logística | México |
+| 756 | Vencido | 2024-04-11 | 2024-02-26 | 18426.06 | PEN | Proveedor_100 | Logística | México |
+| 4778 | Vencido | 2024-12-13 | 2024-11-13 | 5623.70 | PEN | Proveedor_100 | Logística | México |
+| 5972 | Pendiente | 2024-03-23 | 2024-03-08 | 10978.26 | USD | Proveedor_100 | Logística | México |
+
+Luego cruzamos esta tabla temporal supplier_invoices con la tabla temporal ultimo_pago antes creada en un LEFT JOIN. A la columna creada "estado_factura" le agregamos un nuevo CASE con el tipo de cambio de dolar a 3.5 para **estandarizar** el monto total de cada factura pendiente según la columna CURRENCY, que puede ser en soles o dolares. Todo ello lo guardamos en una nueva CTE temporal llamada "estado_factura_supplier"
+```sql
+with suppliers_invoices as (
+select i.invoice_id,i.due_date,i.issue_date,i.currency,i.invoice_amount,i.status,s.supplier_name,s.category,s.country
+from sil_invoices i left join sil_suppliers s 
+on i.supplier_id=s.supplier_id  
+),
+
+ultimo_pago AS (
+SELECT
+    invoice_id,
+    MAX(payment_date) AS fecha_ultimo_pago
+FROM sil_payments
+GROUP BY invoice_id ),
+
+facturas_total as (
+select p.fecha_ultimo_pago,i.invoice_id,i.due_date, i.issue_date, i.status,i.currency, i.supplier_name,i.invoice_amount,i.category,i.country
+from suppliers_invoices i left join ultimo_pago p 
+on i.invoice_id=p.invoice_id ),
+
+estado_factura_supplier as (
+ select invoice_id,status,invoice_amount,supplier_name,category,country,currency,
+  case
+    when issue_date>fecha_ultimo_pago then 'anticipada'
+    when issue_date<=fecha_ultimo_pago and fecha_ultimo_pago<=due_date then 'a tiempo'
+    when fecha_ultimo_pago> due_date then 'con retraso'
+    when fecha_ultimo_pago is null then 'pendiente'
+    else 'otro'
+  end as estado_factura,
+  case
+    when currency = 'USD' THEN invoice_amount*(3.5)
+    else invoice_amount
+    end as invoice_amount_convert
+ from facturas_total )
+
+select top 15 * from estado_factura_supplier
+```
+| invoice_id | status | invoice_amount | supplier_name | category | country | currency | estado_factura | invoice_amount_convert |
+|-----------:|--------|---------------:|---------------|----------|---------|----------|----------------|------------------------:|
+| 5568 | Pendiente | 2601.53 | Proveedor_100 | Logística | México | USD | con retraso | 9105.355 |
+| 4070 | Pagado | 5343.80 | Proveedor_100 | Logística | México | USD | pendiente | 18703.300 |
+| 3177 | Vencido | 11253.18 | Proveedor_100 | Logística | México | PEN | pendiente | 11253.180 |
+| 5177 | Vencido | 8631.95 | Proveedor_100 | Logística | México | USD | con retraso | 30211.825 |
+| 283 | Vencido | 11039.55 | Proveedor_100 | Logística | México | USD | pendiente | 38638.425 |
+| 5725 | Pendiente | 2385.68 | Proveedor_100 | Logística | México | PEN | con retraso | 2385.680 |
+| 138 | Pendiente | 19328.74 | Proveedor_100 | Logística | México | USD | a tiempo | 67650.590 |
+| 1154 | Pendiente | 19940.49 | Proveedor_100 | Logística | México | USD | con retraso | 69791.715 |
+| 5122 | Pagado | 17608.22 | Proveedor_100 | Logística | México | USD | con retraso | 61628.770 |
+| 5105 | Pagado | 9182.18 | Proveedor_100 | Logística | México | USD | con retraso | 32137.630 |
+| 5421 | Vencido | 7339.20 | Proveedor_100 | Logística | México | USD | pendiente | 25687.200 |
+| 4301 | Vencido | 15912.33 | Proveedor_100 | Logística | México | USD | anticipada | 55693.155 |
+| 756 | Vencido | 18426.06 | Proveedor_100 | Logística | México | PEN | pendiente | 18426.060 |
+| 4778 | Vencido | 5623.70 | Proveedor_100 | Logística | México | PEN | pendiente | 5623.700 |
+| 5972 | Pendiente | 10978.26 | Proveedor_100 | Logística | México | USD | anticipada | 38423.910 |
+
+Finalmente creamos la querie que nos dara el top 15 de proveedores con mayor cantidad de facturas pendientes ordenado de mayor a menor por la cantidad_facturas.
+
+```sql
+with suppliers_invoices as (
+select i.invoice_id,i.due_date,i.issue_date,i.currency,i.invoice_amount,i.status,s.supplier_name,s.category,s.country
+from sil_invoices i left join sil_suppliers s 
+on i.supplier_id=s.supplier_id  
+),
+
+ultimo_pago AS (
+SELECT
+    invoice_id,
+    MAX(payment_date) AS fecha_ultimo_pago
+FROM sil_payments
+GROUP BY invoice_id ),
+
+facturas_total as (
+select p.fecha_ultimo_pago,i.invoice_id,i.due_date, i.issue_date, i.status,i.currency, i.supplier_name,i.invoice_amount,i.category,i.country
+from suppliers_invoices i left join ultimo_pago p 
+on i.invoice_id=p.invoice_id ),
+
+estado_factura_supplier as (
+ select invoice_id,status,invoice_amount,supplier_name,category,country,currency,
+  case
+    when issue_date>fecha_ultimo_pago then 'anticipada'
+    when issue_date<=fecha_ultimo_pago and fecha_ultimo_pago<=due_date then 'a tiempo'
+    when fecha_ultimo_pago> due_date then 'con retraso'
+    when fecha_ultimo_pago is null then 'pendiente'
+    else 'otro'
+  end as estado_factura,
+  case
+    when currency = 'USD' THEN invoice_amount*(3.5)
+    else invoice_amount
+    end as invoice_amount_convert
+ from facturas_total )
+
+ select top 15 supplier_name, count(invoice_id)cantidad_facturas, sum(invoice_amount_convert)monto_total, category, country
+ from estado_factura_supplier
+ where estado_factura='pendiente'
+ group by supplier_name,category, country
+ order by cantidad_facturas desc
+```
+| supplier_name | cantidad_facturas | monto_total | category | country |
+|---------------|------------------:|------------:|----------|---------|
+| Proveedor_49  | 39 | 886150.590 | Tecnología | Chile |
+| Proveedor_110 | 35 | 639481.425 | Tecnología | Chile |
+| Proveedor_119 | 34 | 704010.390 | Tecnología | México |
+| Proveedor_50  | 34 | 836853.890 | Tecnología | Chile |
+| Proveedor_17  | 33 | 711473.255 | Insumos | Colombia |
+| Proveedor_57  | 31 | 631536.670 | Mantenimiento | Chile |
+| Proveedor_2   | 30 | 570720.305 | Tecnología | Chile |
+| Proveedor_32  | 30 | 586046.550 | Servicios | México |
+| Proveedor_39  | 30 | 557947.760 | Logística | Perú |
+| Proveedor_43  | 30 | 612381.740 | Tecnología | Perú |
+| Proveedor_68  | 30 | 644425.470 | Logística | Colombia |
+| Proveedor_75  | 30 | 671401.135 | Servicios | México |
+| Proveedor_83  | 30 | 440430.675 | Insumos | Perú |
+| Proveedor_101 | 29 | 661876.800 | Insumos | Colombia |
+| Proveedor_115 | 29 | 773614.730 | Logística | Perú |
+
+Si lo ordenamos por monto_total cambia las posiciones de los proveedores: 
+
+| supplier_name | cantidad_facturas | monto_total | category | country |
+|---------------|------------------:|------------:|----------|---------|
+| Proveedor_49  | 39 | 886150.590 | Tecnología | Chile |
+| Proveedor_50  | 34 | 836853.890 | Tecnología | Chile |
+| Proveedor_115 | 29 | 773614.730 | Logística | Perú |
+| Proveedor_5   | 22 | 771192.735 | Servicios | Perú |
+| Proveedor_98  | 28 | 756414.305 | Insumos | Chile |
+| Proveedor_74  | 28 | 742707.330 | Servicios | Colombia |
+| Proveedor_91  | 28 | 738725.560 | Logística | Perú |
+| Proveedor_17  | 33 | 711473.255 | Insumos | Colombia |
+| Proveedor_119 | 34 | 704010.390 | Tecnología | México |
+| Proveedor_99  | 24 | 691424.700 | Insumos | Perú |
+| Proveedor_75  | 30 | 671401.135 | Servicios | México |
+| Proveedor_103 | 27 | 669093.980 | Tecnología | México |
+| Proveedor_114 | 27 | 668504.835 | Logística | Chile |
+| Proveedor_12  | 28 | 665081.010 | Tecnología | Perú |
+| Proveedor_21  | 29 | 664893.115 | Tecnología | México |
 
