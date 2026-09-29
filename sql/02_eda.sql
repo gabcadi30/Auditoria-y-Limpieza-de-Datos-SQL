@@ -79,34 +79,20 @@ FROM bz_payments
 WHERE ISDATE(payment_date)=0
 --Todas las fechas tienen formato correcto (DATE).
 
-** 5.Conocer el rango de fechas.
-select max(cast(payment_date as date)) AS 'max_date',
-       min (cast (payment_date as date)) as 'min_date'
-from bz_payments
 
-select max(cast(issue_date as date)) AS 'max_date',
-       min (cast (issue_date as date)) as 'min_date'
-from bz_invoices
-
-select max(cast(due_date as date)) AS 'max_date',
-       min (cast (due_date as date)) as 'min_date'
-from bz_invoices
---El rango va desde el 2023-01-01(issue_date) hasta el 2025-05-30(due_date).
---No presentan datos absurdos, ni nulos, ni outliers.
-
-** 6.Verificar si existen proveedores en facturas que no esten en su tabla de proveedores.
+** 5.Verificar si existen proveedores en facturas que no esten en su tabla de proveedores.
 SELECT DISTINCT supplier_id 
 FROM bz_invoices 
 WHERE supplier_id NOT IN (SELECT supplier_id FROM bz_suppliers)
 --No existe ningún proveedor en la tabla Invoices ajeno a la tabla stg_suppliers.
 
-** 7.Conocer si hay pagos adelantados (anticipos)
+** 6.Conocer si hay pagos adelantados (anticipos)
 select invoice_id,due_date,issue_date
 from bz_invoices
 where cast(due_date as date)< cast (issue_date as date)
 --Detectamos que hay 2328 pagos realizados antes de la fecha de emision de la factura.
 
-** 8.Conocer la relación de facturas con pagos.
+** 7.Conocer la relación de facturas con pagos.
 with invoice_temporal 
 as (
 select invoice_id,count (*) as 'cantidad_pagos'
