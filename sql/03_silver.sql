@@ -10,49 +10,68 @@
 USE proyectotesoreria_db;
 GO
 
--- 1. Definición de Estructura (Tablas Silver)
-CREATE TABLE Departments (
-    department_id INT,
-    department_name VARCHAR(20),
-    budget_owner VARCHAR(20)
-);
+--1. Creación de Tablas Silver
+   
+DROP TABLE IF EXISTS sil_departments
+CREATE TABLE sil_departments (
+    department_id int,
+    department_name varchar(20),
+    budget_owner varchar(20) )
 
-CREATE TABLE Payment_methods (
-     method_id INT,
-     method_name VARCHAR(20)
-);
+DROP TABLE IF EXISTS sil_payment_methods
+CREATE TABLE sil_payment_methods (
+     method_id int,
+     method_name varchar(20) )
 
-CREATE TABLE Suppliers (
-    supplier_id INT,
-    supplier_name VARCHAR(20),
-    category VARCHAR(20),
-    country VARCHAR(20),
-    rating VARCHAR(5)
-);
+DROP TABLE IF EXISTS sil_suppliers
+CREATE TABLE sil_suppliers (
+    supplier_id int,
+    supplier_name varchar(20),
+    category varchar(20),
+    country varchar(20),
+    rating varchar(5) )
 
-CREATE TABLE Invoices (
-    invoice_id INT,
-    supplier_id INT,
-    department_id INT,
-    invoice_number VARCHAR(12),
-    issue_date DATE,
-    due_date DATE,
-    invoice_amount DECIMAL(12,2),
-    currency VARCHAR(3),
-    [status] VARCHAR(20)
-);
+DROP TABLE IF EXISTS sil_invoices;
+CREATE TABLE sil_invoices (
+invoice_id int,
+supplier_id int,
+department_id int,
+invoice_number varchar(12),
+issue_date date,
+due_date date,
+invoice_amount decimal(10,2),
+invoice_amount_status varchar (20),
+invoice_number_status varchar(20),
+currency varchar(3),
+status varchar(12) )
 
-CREATE TABLE Payments (
-    payment_id INT,
-    invoice_id INT,
-    payment_date DATE,
-    payment_amount DECIMAL(12,2),
-    method_id INT,
-    processed_by VARCHAR(50)
-);
-GO
+DROP TABLE IF EXISTS sil_payments;
+CREATE TABLE sil_payments (
+  payment_id INT,
+  invoice_id INT ,
+  payment_date DATE,
+  payment_amount NUMERIC(10,2),
+  payment_amount_status VARCHAR(20),
+  method_id INT,
+  processed_by VARCHAR(20) )
 
--- 2. Proceso de Transformación e Inserción (ETL)
+-- 2. Transformación y Carga de Datos:
+   
+INSERT INTO sil_departments (
+department_id,
+department_name,
+budget_owner )
+   
+SELECT 
+ cast(department_id as int),
+ department_name,
+ budget_owner
+FROM bz_departments
+
+
+
+
+   
 
 -- Limpieza y carga de Invoices
 WITH invoice_temporal AS (
