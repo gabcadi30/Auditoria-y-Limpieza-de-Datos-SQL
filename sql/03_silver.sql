@@ -58,7 +58,7 @@ GO
 WITH invoice_temporal AS (
     SELECT *,
            ROW_NUMBER() OVER(PARTITION BY invoice_id ORDER BY issue_date) AS rn
-    FROM stg_invoices
+    FROM bz_invoices
     WHERE invoice_amount IS NOT NULL
 )
 INSERT INTO Invoices
@@ -79,7 +79,7 @@ WHERE rn = 1;
 WITH payment_temporal AS (
     SELECT *, 
            ROW_NUMBER() OVER(PARTITION BY payment_id ORDER BY payment_date) AS rn
-    FROM stg_payments
+    FROM bz_payments
     WHERE payment_amount IS NOT NULL
 )
 INSERT INTO Payments
