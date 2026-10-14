@@ -6,62 +6,55 @@ OBJETIVO:
 
 USE proyectotesoreria_db;
 GO
-** 1. Volumen y presencia de valores duplicados:   
---En la tabla bz_invoices:
+   
+** 1.Presencia de valores nulos:
+--En la tabla bz_invoices:    
 SELECT COUNT(*) as 'total_filas',
-      COUNT(distinct invoice_id)as'facturas_unicas'
+       COUNT (invoice_amount) as 'filas_ok',
+       COUNT(*)-COUNT(invoice_amount) as 'nulos'
 FROM bz_invoices
   -- total_filas=6120
-  -- facturas_unicas=6000
-
---En la tabla bz_payments:
-SELECT COUNT(*) as 'total_filas',
-      COUNT(distinct payment_id)as 'pagos_unicos'
-FROM bz_payments
-  -- total_filas=4580
-  -- pagos_unicos=4500
-
-** 2.Determinar presencia de valores nulos:
---En la tabla bz_invoices:    
-SELECT COUNT(*) as 'total_rows',
-       COUNT (invoice_amount) as 'non_nulls',
-       COUNT(*)-COUNT(invoice_amount) as 'nulls'
-FROM bz_invoices
-  -- total_rows=6120
-  -- non_nulls=5820
-  -- nulls=300
+  -- filas_ok=5820
+  -- nulos=300
 --Identificamos 300 valores nulos.
    
 --En la tabla bz_payments:   
-SELECT COUNT(*) AS 'total_rows', 
-       COUNT(payment_amount) as 'non_nulls',
-       COUNT(*)-COUNT(payment_amount) as 'nulls'
+SELECT COUNT(*) AS 'total_filas', 
+       COUNT(payment_amount) as 'filas_ok',
+       COUNT(*)-COUNT(payment_amount) as 'nulos'
 FROM bz_payments
-  -- total_rows=4580
-  -- non_nulls=4449
-  -- nulls=131
+  -- total_filas=4580
+  -- filas_ok=4449
+  -- nulos=131
 --Identificamos 131 valores nulos.
 
-** 3.Conocer los valores duplicados: 
+** 2.Presencia de valores duplicados: 
 --En la tabla bz_invoices:
-SELECT invoice_id, COUNT(*)
+SELECT invoice_id, COUNT(*) as 'total_duplicado'
 FROM bz_invoices
 GROUP BY invoice_id
 HAVING COUNT(*) > 1
---Detectamos 120 valores de invoice_id duplicados.
+--Detectamos 120 valores con invoice_id duplicados.120 filas completas repetidas
    
-SELECT invoice_number, COUNT(*) as 'veces_repetido'
+SELECT invoice_number, COUNT(*) as 'total_duplicado'
 FROM bz_invoices
 GROUP BY invoice_number
 HAVING COUNT(*) > 1
---Detectamos 132 valores de invoice_number duplicados. 
+--Detectamos 132 valores de invoice_number duplicados.
+   
+--Aislamos los valores:
+SELECT invoice_number FROM bz_invoices
+GROUP BY invoice_number
+HAVING COUNT( DISTINCT(invoice_id)) > 1
+--Nos quedamos con los 12 valores duplicados. Mismo invoice_number, distinta factura y monto.
+   
 
 --En la tabla bz_payments:   
 SELECT payment_id, COUNT(*)
 FROM bz_payments
 GROUP BY payment_id
 HAVING COUNT(*) > 1   
---Detectamos 80 valores de payment_id duplicados.  
+--Detectamos 80 valores de payment_id duplicados. 80 filas completas repetidas.  
 
 ** 4. Revisión del formato en Fechas
 --En la tabla bz_invoices:
@@ -77,7 +70,7 @@ WHERE ISDATE(due_date)=0
 SELECT payment_date
 FROM bz_payments
 WHERE ISDATE(payment_date)=0
---Todas las fechas tienen formato correcto (DATE).
+-- 0 en los 3.Las fechas tienen formato correcto.
 
 
 ** 5.Verificar si existen proveedores en facturas que no esten en su tabla de proveedores.
