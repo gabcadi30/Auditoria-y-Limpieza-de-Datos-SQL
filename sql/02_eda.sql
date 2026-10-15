@@ -97,16 +97,15 @@ where i.status = 'pagado' and p.payment_id is null
 -- Cuando la columna status marca como 'pagado' existen 976 valores con pago nulos, por tanto, la columna 'STATUS'no refleja el estado real de las facturas.
 
 **8. Conciliación de monto pagado y monto factura
-
 with temporal as (
 SELECT 
     invoice_id, 
-    SUM(CAST(payment_amount AS DECIMAL(18,2))) AS total_pagado
+    SUM(CAST(payment_amount AS DECIMAL(8,2))) AS total_pagado
 FROM bz_payments
-GROUP BY invoice_id )
+GROUP BY invoice_id ),
 
-select 
-case 
+resumen_estado as (
+select case 
 when total_pagado is null then 'sin_pago'
 when abs(total_pagado-invoice_amount)<0.1 then 'conciliado'
 when total_pagado>invoice_amount then 'sobrepagado'else 'subpagado' end as estado,
@@ -116,6 +115,10 @@ where invoice_amount is not null
 group by (case
 when total_pagado is null then 'sin_pago'
 when abs(total_pagado-invoice_amount)<0.1 then 'conciliado'
-when total_pagado>invoice_amount then 'sobrepagado'else 'subpagado' end)
+when total_pagado>invoice_amount then 'sobrepagado'else 'subpagado' end) )
 
-
+select estado, total_pagos,
+cast(total_pagos*100.00/sum(total_pagos)over() as decimal(8,2)) as 'porcentaje'
+from resumen_estado
+group by estado,total_pagos
+--El 32.37% está con sobrepago, el 48.61% no tiene pago, el 19.02% tiene subpago y el 0% de las facturas están conciliadas.
