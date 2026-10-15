@@ -71,37 +71,51 @@ SELECT payment_date
 FROM bz_payments
 WHERE ISDATE(payment_date)=0
 -- 0 en los 3.Las fechas tienen formato correcto.
+   
+** 5.Conocer si hay pagos adelantados (anticipos)
+SELECT COUNT(*) AS total_anticipos 
+FROM bz_payments p JOIN bz_invoices i 
+ON p.invoice_id=i.invoice_id
+WHERE p.payment_date<i.issue_date
+--Detectamos 2328 de pagos realizados antes de la fecha de emisión de la factura.
 
-
-** 5.Verificar si existen proveedores en facturas que no esten en su tabla de proveedores.
+** 6.Integridad de referencia entre tablas
 SELECT DISTINCT supplier_id 
 FROM bz_invoices 
 WHERE supplier_id NOT IN (SELECT supplier_id FROM bz_suppliers)
---No existe ningún proveedor en la tabla Invoices ajeno a la tabla stg_suppliers.
+--No hay proveedores ajenos a su tabla de dimensiones en la tabla de bz_invoices.
 
-** 6.Conocer si hay pagos adelantados (anticipos)
-select invoice_id,due_date,issue_date
-from bz_invoices
-where cast(due_date as date)< cast (issue_date as date)
---Detectamos que hay 2328 pagos realizados antes de la fecha de emision de la factura.
+SELECT COUNT(*) AS pagos_huerfanos
+FROM bz_payments
+WHERE invoice_id NOT IN (SELECT invoice_id FROM bz_invoices)
+--No hay pagos ajenos a su tabla de dimensiones en la tabla de bz_invoices.
+   
+** 7.Verificar la validez de la columna "status"
+select count(*) as casos_inconsistentes
+from bz_invoices i left join bz_payments p on i.invoice_id=p.invoice_id
+where i.status = 'pagado' and p.payment_id is null
+-- Cuando la columna status marca como 'pagado' existen 976 valores con pago nulos, por tanto, la columna 'STATUS'no refleja el estado real de las facturas.
 
-** 7.Conocer la relación de facturas con pagos.
-with invoice_temporal 
-as (
-select invoice_id,count (*) as 'cantidad_pagos'
-from bz_payments
-group by invoice_id
-)
-select cantidad_pagos, count(invoice_id) as 'total_facturas'
-from invoice_temporal
-group by cantidad_pagos
-order by cantidad_pagos
-  --1 cantidad_pagos = 2063 total_facturas
-  --2 cantidad_pagos = 780 total_facturas
-  --3 cantidad_pagos = 232 total_facturas
-  --4 cantidad_pagos = 50 total_facturas
-  --5 cantidad_pagos = 11 total_facturas
-  --6 cantidad_pagos = 1 total_facturas
---Se confirma que cada factura no siempre se cancela en 1 solo pago, existen 1074 facturas que se cancelan en 2, 3 , 4 , 5 y hasta 6 pagos.
+**8. Conciliación de monto pagado y monto factura
+
+with temporal as (
+SELECT 
+    invoice_id, 
+    SUM(CAST(payment_amount AS DECIMAL(18,2))) AS total_pagado
+FROM bz_payments
+GROUP BY invoice_id )
+
+select 
+case 
+when total_pagado is null then 'sin_pago'
+when abs(total_pagado-invoice_amount)<0.1 then 'conciliado'
+when total_pagado>invoice_amount then 'sobrepagado'else 'subpagado' end as estado,
+count(*) total_pagos
+from bz_invoices i left join temporal p on p.invoice_id=i.invoice_id
+where invoice_amount is not null
+group by (case
+when total_pagado is null then 'sin_pago'
+when abs(total_pagado-invoice_amount)<0.1 then 'conciliado'
+when total_pagado>invoice_amount then 'sobrepagado'else 'subpagado' end)
 
 
