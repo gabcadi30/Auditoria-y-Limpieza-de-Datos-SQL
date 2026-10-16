@@ -122,3 +122,23 @@ cast(total_pagos*100.00/sum(total_pagos)over() as decimal(8,2)) as 'porcentaje'
 from resumen_estado
 group by estado,total_pagos
 --El 32.37% está con sobrepago, el 48.61% no tiene pago, el 19.02% tiene subpago y el 0% de las facturas están conciliadas.
+
+**9. Medidas de la diferencia entre lo pagado y el monto de factura
+with temporal as (
+SELECT invoice_id, 
+    SUM(CAST(payment_amount AS DECIMAL(8,2))) AS total_pagado
+FROM bz_payments
+GROUP BY invoice_id ),
+
+conc as (
+select t.total_pagado - i.invoice_amount as 'diferencia'
+from bz_invoices i join temporal t on i.invoice_id=t.invoice_id )
+
+select  distinct
+PERCENTILE_CONT(0.5) within group (order by diferencia) over() as 'mediana', 
+ max(diferencia) over () as 'maxima_diferencia',
+ min(diferencia) over() as 'minima_ diferencia',
+round(avg(diferencia) over() ,2) as 'diferencia_promedio'
+from conc
+--Tenemos una mediana de 3162.37, un valor máximo de diferencia de 59175.36 , un valor mínimo de diferencia de -19662.56 y un promedio de diferencia de 4480.63.
+
