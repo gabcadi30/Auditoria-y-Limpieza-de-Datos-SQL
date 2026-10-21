@@ -50,13 +50,13 @@ HAVING COUNT( DISTINCT(invoice_id)) > 1
    
 
 --En la tabla bz_payments:   
-SELECT payment_id, COUNT(*)
+SELECT payment_id, COUNT(*) as 'total_duplicado'
 FROM bz_payments
 GROUP BY payment_id
 HAVING COUNT(*) > 1   
---Detectamos 80 valores de payment_id duplicados. 80 filas completas repetidas.  
+--Detectamos 80 valores con payment_id duplicados. 80 filas completas repetidas.  
 
-** 4. Revisión del formato en Fechas
+** 3. Revisión del formato en fechas:
 --En la tabla bz_invoices:
 SELECT issue_date
 FROM bz_invoices
@@ -72,14 +72,14 @@ FROM bz_payments
 WHERE ISDATE(payment_date)=0
 -- 0 en los 3.Las fechas tienen formato correcto.
    
-** 5.Conocer si hay pagos adelantados (anticipos)
+** 4.Conocer si hay pagos antes de la emisión de factura (anticipo):
 SELECT COUNT(*) AS total_anticipos 
 FROM bz_payments p JOIN bz_invoices i 
 ON p.invoice_id=i.invoice_id
 WHERE p.payment_date<i.issue_date
 --Detectamos 2328 de pagos realizados antes de la fecha de emisión de la factura.
 
-** 6.Integridad de referencia entre tablas
+** 5.Integridad de referencia entre tablas:
 SELECT DISTINCT supplier_id 
 FROM bz_invoices 
 WHERE supplier_id NOT IN (SELECT supplier_id FROM bz_suppliers)
@@ -90,13 +90,16 @@ FROM bz_payments
 WHERE invoice_id NOT IN (SELECT invoice_id FROM bz_invoices)
 --No hay pagos ajenos a su tabla de dimensiones en la tabla de bz_invoices.
    
-** 7.Verificar la validez de la columna "status"
+** 6.Verificar la validez de "status":
 select count(*) as casos_inconsistentes
 from bz_invoices i left join bz_payments p on i.invoice_id=p.invoice_id
 where i.status = 'pagado' and p.payment_id is null
 -- Cuando la columna status marca como 'pagado' existen 976 valores con pago nulos, por tanto, la columna 'STATUS'no refleja el estado real de las facturas.
 
-**8. Conciliación de monto pagado y monto factura
+
+
+   
+**7. Conciliación de monto pagado vs monto factura:
 with temporal as (
 SELECT 
     invoice_id, 
@@ -123,7 +126,7 @@ from resumen_estado
 group by estado,total_pagos
 --El 32.37% está con sobrepago, el 48.61% no tiene pago, el 19.02% tiene subpago y el 0% de las facturas están conciliadas.
 
-**9. Medidas de la diferencia entre lo pagado y el monto de factura
+**8. Medidas estadisticas de la diferencia de conciliación:
 with temporal as (
 SELECT invoice_id, 
     SUM(CAST(payment_amount AS DECIMAL(8,2))) AS total_pagado
