@@ -1,59 +1,65 @@
 
 /* =======================================================================
    OBJETIVO:
-  -Ejecutar las reglas de limpieza definidas tras el EDA para transformar datos de Bronze a tablas estructuradas.
-  -Aplicar desduplicación (funciones de ventana) y filtrar nulos críticos.
+  -Ejecutar las reglas de limpieza definidas tras el EDA.
+  -Aplicar funciones de ventana y filtrar nulos críticos.
   -Normalizar tipos de datos (CAST) y asegurar la consistencia del esquema.
-  -Mantener tablas sin PRIMARY KEY temporalmente para facilitar la auditoría de duplicados.
    ======================================================================= */
 
 USE proyectotesoreria_db;
 GO
 
---1. Creación de Tablas Silver
+--1. Creación de tablas silver: 3 dimensiones + 2 hechos
    
 DROP TABLE IF EXISTS sil_departments
-CREATE TABLE sil_departments (
-    department_id int,
-    department_name varchar(20),
-    budget_owner varchar(20) )
+CREATE TABLE dbo.sil_departments (
+    department_id INT NOT NULL,
+    department_name NVARCHAR(50),
+    budget_owner NVARCHAR(50)
+);
 
 DROP TABLE IF EXISTS sil_payment_methods
-CREATE TABLE sil_payment_methods (
-     method_id int,
-     method_name varchar(20) )
+CREATE TABLE dbo.sil_payment_methods (
+    method_id INT NOT NULL,
+    method_name NVARCHAR(50)
+);
 
 DROP TABLE IF EXISTS sil_suppliers
-CREATE TABLE sil_suppliers (
-    supplier_id int,
-    supplier_name varchar(20),
-    category varchar(20),
-    country varchar(20),
-    rating varchar(5) )
-
+CREATE TABLE dbo.sil_suppliers (
+    supplier_id INT NOT NULL,
+    supplier_name NVARCHAR(50),
+    category NVARCHAR(50),
+    country NVARCHAR(50),
+    rating VARCHAR(5)
+);
 DROP TABLE IF EXISTS sil_invoices;
-CREATE TABLE sil_invoices (
-invoice_id int,
-supplier_id int,
-department_id int,
-invoice_number varchar(12),
-issue_date date,
-due_date date,
-invoice_amount decimal(10,2),
-invoice_amount_status varchar (20),
-invoice_number_status varchar(20),
-currency varchar(3),
-status varchar(12) )
+CREATE TABLE dbo.sil_invoices (
+    invoice_id INT NOT NULL,
+    supplier_id INT,
+    department_id INT,
+    invoice_number VARCHAR(20),
+    issue_date DATE,
+    due_date DATE,
+    invoice_amount DECIMAL(10,2),
+    currency CHAR(3),
+    status_original VARCHAR(12),      -- deprecada, se conserva por trazabilidad
+    invoice_amount_status VARCHAR(10),  -- ok | faltante
+    invoice_number_status VARCHAR(10)   -- ok | duplicado
+);
 
 DROP TABLE IF EXISTS sil_payments;
-CREATE TABLE sil_payments (
-  payment_id INT,
-  invoice_id INT ,
-  payment_date DATE,
-  payment_amount NUMERIC(10,2),
-  payment_amount_status VARCHAR(20),
-  method_id INT,
-  processed_by VARCHAR(20) )
+CREATE TABLE dbo.sil_payments (
+    payment_id INT NOT NULL,
+    invoice_id INT,
+    payment_date DATE,
+    payment_amount DECIMAL(10,2),
+    method_id INT,
+    processed_by NVARCHAR(50),
+    payment_amount_status VARCHAR(10),  -- ok | faltante
+    es_anticipo CHAR(2),                 -- si | no
+    es_pago_final CHAR(2)                -- si | no
+);
+
 
 -- 2. Transformación y Carga de Datos:
    
