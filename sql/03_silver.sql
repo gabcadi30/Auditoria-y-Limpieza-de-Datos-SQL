@@ -158,5 +158,12 @@ FROM ultimo_pago e
 LEFT JOIN dbo.sil_invoices i ON e.invoice_id = i.invoice_id;
 GO
 
+--3. Validación de la carga:
+SELECT 'sil_invoices' AS tabla, COUNT(*) AS filas FROM dbo.sil_invoices                                                   --6000
+UNION ALL SELECT 'sil_payments', COUNT(*) FROM dbo.sil_payments                                                           --4500  
+UNION ALL SELECT 'invoices con monto faltante', COUNT(*) FROM dbo.sil_invoices WHERE invoice_amount_status='faltante'     --288 nulos 
+UNION ALL SELECT 'invoices con folio duplicado', COUNT(*) FROM dbo.sil_invoices WHERE invoice_number_status='duplicado'   --24 duplicados/ 12 folios
+UNION ALL SELECT 'pagos anticipados', COUNT(*) FROM dbo.sil_payments WHERE es_anticipo='si'                               --2245 anticipos
+UNION ALL SELECT 'pagos marcados como final', COUNT(*) FROM dbo.sil_payments WHERE es_pago_final='si'                     --3137 ultimos pagos
 
 
