@@ -42,7 +42,7 @@ CREATE TABLE dbo.sil_invoices (
     due_date DATE,
     invoice_amount DECIMAL(10,2),
     currency CHAR(3),
-    status_original VARCHAR(12),      -- deprecada, se conserva por trazabilidad
+    status_original VARCHAR(12),      -- en desuso, se conserva por trazabilidad
     invoice_amount_status VARCHAR(10),  -- ok | faltante
     invoice_number_status VARCHAR(10)   -- ok | duplicado
 );
@@ -62,59 +62,101 @@ CREATE TABLE dbo.sil_payments (
 
 
 -- 2. Transformación y Carga de Datos:
-   
-INSERT INTO sil_departments (
-department_id,
-department_name,
-budget_owner )
-   
+-- Las 3 tablas dimensionales (sil_departments, sil_payment_methods, sil_suppliers):
+
+INSERT INTO dbo.sil_departments ( department_id, department_name, budget_owner )
 SELECT 
- cast(department_id as int),
- department_name,
- budget_owner
-FROM bz_departments
+   CAST(department_id AS INT), 
+   department_name, 
+   budget_owner
+FROM dbo.bz_departments;
 
 
+INSERT INTO dbo.sil_payment_methods ( method_id, method_name )
+SELECT 
+   CAST(method_id AS INT), 
+   method_name
+FROM dbo.bz_payment_methods;   
 
 
+INSERT INTO dbo.sil_suppliers ( supplier_id, supplier_name, category, country, rating )
+SELECT
+    CAST(supplier_id AS INT),
+    supplier_name,
+    category,
+    country,
+    rating
+FROM dbo.bz_suppliers;
+GO
    
 
--- Limpieza y carga de Invoices
-WITH invoice_temporal AS (
-    SELECT *,
-           ROW_NUMBER() OVER(PARTITION BY invoice_id ORDER BY issue_date) AS rn
-    FROM bz_invoices
-    WHERE invoice_amount IS NOT NULL
+-- Las 2 tablas de hechos (sil_invoices, sil payments):
+--Carga de sil_invoices:
+WITH 
+ranked AS (
+   SELECT *, ROW_NUMBER() 
+          OVER ( PARTITION BY invoice_id, supplier_id, department_id, invoice_number,
+                            issue_date, due_date, invoice_amount, currency, [status]
+                  ORDER BY issue_date) AS rn
+   FROM dbo.bz_invoices ) 
+, 
+duplicados_parciales AS (
+    SELECT invoice_number
+    FROM dbo.bz_invoices
+    GROUP BY invoice_number
+    HAVING COUNT(DISTINCT invoice_id) > 1
 )
-INSERT INTO Invoices
-SELECT 
+INSERT INTO dbo.sil_invoices
+SELECT
     CAST(invoice_id AS INT),
     CAST(supplier_id AS INT),
     CAST(department_id AS INT),
     invoice_number,
     CAST(issue_date AS DATE),
     CAST(due_date AS DATE),
-    CAST(invoice_amount AS DECIMAL(12,2)),
-    currency,
-    [status]
-FROM invoice_temporal
-WHERE rn = 1;
-
--- Limpieza y carga de Payments
-WITH payment_temporal AS (
-    SELECT *, 
-           ROW_NUMBER() OVER(PARTITION BY payment_id ORDER BY payment_date) AS rn
-    FROM bz_payments
-    WHERE payment_amount IS NOT NULL
-)
-INSERT INTO Payments
-SELECT 
-    CAST(payment_id AS INT),
-    CAST(invoice_id AS INT),
-    CAST(payment_date AS DATE),
-    CAST(payment_amount AS DECIMAL(12,2)),
-    CAST(method_id AS INT),
-    processed_by
-FROM payment_temporal
+    CAST(invoice_amount AS DECIMAL(10,2)),
+    UPPER(currency),
+    [status],
+    CASE WHEN invoice_amount IS NULL THEN 'faltante' ELSE 'ok' END,
+    CASE WHEN invoice_number IN (SELECT invoice_number FROM duplicados_parciales)
+         THEN 'duplicado' ELSE 'ok' END
+FROM ranked
 WHERE rn = 1;
 GO
+
+   
+--Carga en sil_payments:
+WITH 
+ranked AS (
+   SELECT *,
+           ROW_NUMBER() OVER (
+               PARTITION BY payment_id, invoice_id, payment_date, payment_amount,
+                            method_id, processed_by
+               ORDER BY payment_date) AS rn
+    FROM dbo.bz_payments
+),
+ultimo_pago AS (
+    SELECT r.*,
+           ROW_NUMBER() OVER (PARTITION BY r.invoice_id
+                              ORDER BY r.payment_date DESC, r.payment_id DESC) AS rn_final
+    FROM ranked r
+    WHERE r.rn = 1
+)
+INSERT INTO dbo.sil_payments
+SELECT
+    CAST(e.payment_id AS INT),
+    CAST(e.invoice_id AS INT),
+    CAST(e.payment_date AS DATE),
+    CAST(e.payment_amount AS DECIMAL(10,2)),
+    CAST(e.method_id AS INT),
+    e.processed_by,
+    CASE WHEN e.payment_amount IS NULL THEN 'faltante' ELSE 'ok' END,
+    CASE WHEN i.issue_date IS NOT NULL AND e.payment_date < i.issue_date
+         THEN 'si' ELSE 'no' END,
+    CASE WHEN e.rn_final = 1 THEN 'si' ELSE 'no' END
+FROM ultimo_pago e
+LEFT JOIN dbo.sil_invoices i ON e.invoice_id = i.invoice_id;
+GO
+
+
+
